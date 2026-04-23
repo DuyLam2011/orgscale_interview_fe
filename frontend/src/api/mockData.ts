@@ -66,20 +66,35 @@ export const mockCampaigns: Campaign[] = [
     id: '5',
     name: 'Re-engagement Campaign',
     subject: 'We miss you!',
-    body: 'Hi, we noticed you haven\'t been around lately. Here\'s a special offer to welcome you back...',
+    body: "Hi, we noticed you haven't been around lately. Here's a special offer to welcome you back...",
     status: 'draft',
     recipients: [{ id: 'r15', email: 'oscar@example.com', opened: false }],
     stats: { totalSent: 0, totalOpened: 0, sendRate: 0, openRate: 0 },
     createdAt: '2024-02-08T11:00:00Z',
   },
-  ...Array.from({ length: 7 }, (_, i) => ({
-    id: `${6 + i}`,
-    name: `Test Campaign ${6 + i}`,
-    subject: `Test Subject ${6 + i}`,
-    body: `Test body for campaign ${6 + i}`,
-    status: (['draft', 'scheduled', 'sent'] as const)[i % 3],
-    recipients: [{ id: `rX${i}`, email: `test${i}@example.com`, opened: false }],
-    stats: { totalSent: 0, totalOpened: 0, sendRate: 0, openRate: 0 },
-    createdAt: new Date(2024, 1, i + 1).toISOString(),
-  })),
+  ...Array.from({ length: 7 }, (_, i) => {
+    const status = (['draft', 'scheduled', 'sent'] as const)[i % 3]
+    const isSent = status === 'sent'
+    const totalSent = isSent ? 5 + i : 0
+    const totalOpened = isSent ? Math.floor((5 + i) * 0.6) : 0
+    return {
+      id: `${6 + i}`,
+      name: `Test Campaign ${6 + i}`,
+      subject: `Test Subject ${6 + i}`,
+      body: `Test body for campaign ${6 + i}`,
+      status,
+      recipients: [
+        { id: `rX${i}`, email: `test${i}@example.com`, opened: isSent && i % 2 === 0 },
+        { id: `rX${i}b`, email: `test${i}b@example.com`, opened: isSent },
+      ],
+      stats: {
+        totalSent,
+        totalOpened,
+        sendRate: isSent ? 100 : 0,
+        openRate: isSent ? Math.round((totalOpened / totalSent) * 100) : 0,
+      },
+      createdAt: new Date(2024, 1, i + 1).toISOString(),
+      ...(isSent ? { sentAt: new Date(2024, 1, i + 2).toISOString() } : {}),
+    }
+  }),
 ]
