@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -11,10 +12,18 @@ import StatusBadge from '../components/StatusBadge'
 import ProgressBar from '../components/ProgressBar'
 import { SkeletonDetail } from '../components/SkeletonLoader'
 
+function defaultScheduleDate() {
+  const d = new Date(Date.now() + 86400000) // tomorrow
+  return d.toISOString().slice(0, 16) // "YYYY-MM-DDTHH:MM" for datetime-local input
+}
+
 export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+
+  const [showScheduleForm, setShowScheduleForm] = useState(false)
+  const [scheduleDate, setScheduleDate] = useState(defaultScheduleDate)
 
   const { data: campaign, isLoading, isError, error } = useQuery({
     queryKey: ['campaign', id],
@@ -23,10 +32,11 @@ export default function CampaignDetailPage() {
   })
 
   const scheduleMutation = useMutation({
-    mutationFn: () => scheduleCampaign(id!),
+    mutationFn: (scheduledAt: string) => scheduleCampaign(id!, scheduledAt),
     onSuccess: (updated) => {
       queryClient.setQueryData(['campaign', id], updated)
       queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+      setShowScheduleForm(false)
     },
   })
 
@@ -47,9 +57,18 @@ export default function CampaignDetailPage() {
   })
 
   function handleDelete() {
-    if (window.confirm('Are you sure you want to delete this campaign? This action cannot be undone.')) {
+    if (
+      window.confirm(
+        'Are you sure you want to delete this campaign? This action cannot be undone.',
+      )
+    ) {
       deleteMutation.mutate()
     }
+  }
+
+  function handleConfirmSchedule() {
+    const iso = new Date(scheduleDate).toISOString()
+    scheduleMutation.mutate(iso)
   }
 
   function formatDate(iso?: string) {
@@ -64,9 +83,7 @@ export default function CampaignDetailPage() {
   }
 
   const anyMutating =
-    scheduleMutation.isPending ||
-    sendMutation.isPending ||
-    deleteMutation.isPending
+    scheduleMutation.isPending || sendMutation.isPending || deleteMutation.isPending
 
   const mutationError =
     scheduleMutation.error || sendMutation.error || deleteMutation.error
@@ -77,6 +94,8 @@ export default function CampaignDetailPage() {
       : mutationError
         ? 'An unexpected error occurred'
         : null
+
+  const minScheduleDate = new Date(Date.now() + 60000).toISOString().slice(0, 16)
 
   return (
     <div>
@@ -107,9 +126,7 @@ export default function CampaignDetailPage() {
           <div className="bg-white rounded-xl shadow p-6">
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  {campaign.name}
-                </h1>
+                <h1 className="text-2xl font-bold text-gray-900">{campaign.name}</h1>
                 <p className="text-gray-500 text-sm mt-1">{campaign.subject}</p>
               </div>
               <StatusBadge status={campaign.status} />
@@ -152,15 +169,11 @@ export default function CampaignDetailPage() {
             </h2>
             <div className="grid grid-cols-2 gap-6 mb-4 text-center">
               <div>
-                <p className="text-3xl font-bold text-gray-900">
-                  {campaign.stats.totalSent}
-                </p>
+                <p className="text-3xl font-bold text-gray-900">{campaign.stats.totalSent}</p>
                 <p className="text-xs text-gray-500 mt-1">Total Sent</p>
               </div>
               <div>
-                <p className="text-3xl font-bold text-gray-900">
-                  {campaign.stats.totalOpened}
-                </p>
+                <p className="text-3xl font-bold text-gray-900">{campaign.stats.totalOpened}</p>
                 <p className="text-xs text-gray-500 mt-1">Total Opened</p>
               </div>
             </div>
@@ -185,17 +198,12 @@ export default function CampaignDetailPage() {
             </h2>
             <ul className="divide-y divide-gray-100">
               {campaign.recipients.map((r) => (
-                <li
-                  key={r.id}
-                  className="py-2 flex items-center justify-between text-sm"
-                >
+                <li key={r.id} className="py-2 flex items-center justify-between text-sm">
                   <span className="text-gray-700">{r.email}</span>
                   {campaign.status === 'sent' && (
                     <span
                       className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        r.opened
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-gray-100 text-gray-500'
+                        r.opened ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
                       }`}
                     >
                       {r.opened ? 'Opened' : 'Not opened'}
@@ -207,16 +215,45 @@ export default function CampaignDetailPage() {
           </div>
 
           {/* Actions */}
-          <div className="flex gap-3 flex-wrap">
+          <div className="flex gap-3 flex-wrap items-center">
             {campaign.status === 'draft' && (
-              <button
-                onClick={() => scheduleMutation.mutate()}
-                disabled={anyMutating}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {scheduleMutation.isPending ? 'Scheduling…' : 'Schedule'}
-              </button>
+              <>
+                {showScheduleForm ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      type="datetime-local"
+                      value={scheduleDate}
+                      min={minScheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      onClick={handleConfirmSchedule}
+                      disabled={anyMutating}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {scheduleMutation.isPending ? 'Scheduling…' : 'Confirm'}
+                    </button>
+                    <button
+                      onClick={() => setShowScheduleForm(false)}
+                      disabled={anyMutating}
+                      className="px-4 py-2 rounded-lg text-sm border border-gray-300 hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowScheduleForm(true)}
+                    disabled={anyMutating}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Schedule
+                  </button>
+                )}
+              </>
             )}
+
             {campaign.status === 'scheduled' && (
               <button
                 onClick={() => sendMutation.mutate()}
@@ -226,13 +263,16 @@ export default function CampaignDetailPage() {
                 {sendMutation.isPending ? 'Sending…' : 'Send Now'}
               </button>
             )}
-            <button
-              onClick={handleDelete}
-              disabled={anyMutating}
-              className="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
-            </button>
+
+            {campaign.status !== 'sent' && (
+              <button
+                onClick={handleDelete}
+                disabled={anyMutating}
+                className="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+            )}
           </div>
         </div>
       )}

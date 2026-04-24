@@ -6,6 +6,12 @@ export interface Recipient {
   opened: boolean
 }
 
+export interface BackendRecipient {
+  id: string
+  email: string
+  name: string
+}
+
 export interface CampaignStats {
   totalSent: number
   totalOpened: number
@@ -47,5 +53,5 @@ export interface CreateCampaignRequest {
   name: string
   subject: string
   body: string
-  recipientEmails: string[]
+  recipientIds: string[]
 }

@@ -1,19 +1,7 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createCampaign } from '../api/client'
-import { ApiError } from '../api/client'
-
-function validateEmails(raw: string): string[] | null {
-  const emails = raw
-    .split(/[,\n]+/)
-    .map((e) => e.trim())
-    .filter(Boolean)
-  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  const invalid = emails.filter((e) => !emailRe.test(e))
-  if (invalid.length > 0) return null
-  return emails
-}
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { createCampaign, getRecipients, ApiError } from '../api/client'
 
 export default function NewCampaignPage() {
   const navigate = useNavigate()
@@ -22,8 +10,29 @@ export default function NewCampaignPage() {
   const [name, setName] = useState('')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
-  const [recipientsRaw, setRecipientsRaw] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [search, setSearch] = useState('')
   const [fieldError, setFieldError] = useState<Record<string, string>>({})
+
+  const { data: allRecipients = [], isLoading: loadingRecipients } = useQuery({
+    queryKey: ['recipients'],
+    queryFn: getRecipients,
+  })
+
+  const filtered = allRecipients.filter(
+    (r) =>
+      r.name.toLowerCase().includes(search.toLowerCase()) ||
+      r.email.toLowerCase().includes(search.toLowerCase()),
+  )
+
+  function toggleRecipient(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const mutation = useMutation({
     mutationFn: createCampaign,
@@ -38,12 +47,7 @@ export default function NewCampaignPage() {
     if (!name.trim()) errors.name = 'Name is required'
     if (!subject.trim()) errors.subject = 'Subject is required'
     if (!body.trim()) errors.body = 'Body is required'
-    if (!recipientsRaw.trim()) {
-      errors.recipients = 'At least one recipient is required'
-    } else {
-      const parsed = validateEmails(recipientsRaw)
-      if (!parsed) errors.recipients = 'One or more emails are invalid'
-    }
+    if (selectedIds.size === 0) errors.recipients = 'At least one recipient is required'
     setFieldError(errors)
     return Object.keys(errors).length === 0
   }
@@ -51,8 +55,7 @@ export default function NewCampaignPage() {
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!validate()) return
-    const recipientEmails = validateEmails(recipientsRaw)!
-    mutation.mutate({ name, subject, body, recipientEmails })
+    mutation.mutate({ name, subject, body, recipientIds: Array.from(selectedIds) })
   }
 
   const apiError =
@@ -86,14 +89,9 @@ export default function NewCampaignPage() {
         </div>
       )}
 
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white rounded-xl shadow p-6 space-y-5"
-      >
+      <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-6 space-y-5">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Campaign Name
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Campaign Name</label>
           <input
             type="text"
             value={name}
@@ -101,15 +99,11 @@ export default function NewCampaignPage() {
             className={fieldClass('name')}
             placeholder="e.g. Summer Sale Announcement"
           />
-          {fieldError.name && (
-            <p className="text-xs text-red-600 mt-1">{fieldError.name}</p>
-          )}
+          {fieldError.name && <p className="text-xs text-red-600 mt-1">{fieldError.name}</p>}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Email Subject
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email Subject</label>
           <input
             type="text"
             value={subject}
@@ -123,9 +117,7 @@ export default function NewCampaignPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Email Body
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email Body</label>
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
@@ -133,25 +125,62 @@ export default function NewCampaignPage() {
             className={fieldClass('body')}
             placeholder="Write your email content here…"
           />
-          {fieldError.body && (
-            <p className="text-xs text-red-600 mt-1">{fieldError.body}</p>
-          )}
+          {fieldError.body && <p className="text-xs text-red-600 mt-1">{fieldError.body}</p>}
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Recipient Emails
+            Recipients{' '}
+            {selectedIds.size > 0 && (
+              <span className="text-blue-600 font-normal">({selectedIds.size} selected)</span>
+            )}
           </label>
-          <textarea
-            value={recipientsRaw}
-            onChange={(e) => setRecipientsRaw(e.target.value)}
-            rows={3}
-            className={fieldClass('recipients')}
-            placeholder="alice@example.com, bob@example.com"
-          />
-          <p className="text-xs text-gray-400 mt-1">
-            Separate multiple emails with commas or newlines
-          </p>
+
+          {loadingRecipients ? (
+            <p className="text-sm text-gray-400 py-2">Loading recipients…</p>
+          ) : allRecipients.length === 0 ? (
+            <p className="text-sm text-gray-400 py-2">
+              No recipients available. Run{' '}
+              <code className="bg-gray-100 px-1 rounded">npm run seed</code> on the backend.
+            </p>
+          ) : (
+            <div
+              className={`border rounded-lg overflow-hidden ${fieldError.recipients ? 'border-red-400' : 'border-gray-300'}`}
+            >
+              <div className="p-2 border-b border-gray-200 bg-gray-50">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search recipients…"
+                  className="w-full text-sm bg-transparent focus:outline-none"
+                />
+              </div>
+              <ul className="max-h-48 overflow-y-auto divide-y divide-gray-100">
+                {filtered.length === 0 ? (
+                  <li className="px-3 py-2 text-sm text-gray-400">No matches</li>
+                ) : (
+                  filtered.map((r) => (
+                    <li key={r.id}>
+                      <label className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(r.id)}
+                          onChange={() => toggleRecipient(r.id)}
+                          className="accent-blue-600"
+                        />
+                        <span className="text-sm text-gray-700">
+                          {r.name}{' '}
+                          <span className="text-gray-400 text-xs">({r.email})</span>
+                        </span>
+                      </label>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+          )}
+
           {fieldError.recipients && (
             <p className="text-xs text-red-600 mt-1">{fieldError.recipients}</p>
           )}
