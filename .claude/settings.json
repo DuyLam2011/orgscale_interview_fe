@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run lint)",
+      "Bash(npm run build)",
+      "Bash(npm run dev)"
+    ],
+    "deny": [
+      "Bash(npm install *)",
+      "Bash(rm -rf *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"c:/Users/Admin/Documents/github.com/orgscale_interview_fe\" && npm run lint 2>&1 | tail -20"
+          }
+        ]
+      }
+    ]
+  }
+}
